@@ -4222,3 +4222,64 @@ class FerriteTestnet(Ferrite):
         'enode2.ferritecoin.org s t',
         'enode3.ferritecoin.org s t',
     ]
+
+class Telestai(Coin):
+    NAME = "Telestai"
+    SHORTNAME = "TLS"
+    NET = "mainnet"
+    XPUB_VERBYTES = bytes.fromhex("0488B21E")
+    XPRV_VERBYTES = bytes.fromhex("0488ADE4")
+    P2PKH_VERBYTE = bytes.fromhex("42")
+    P2SH_VERBYTES = (bytes.fromhex("7F"),)
+    GENESIS_HASH = '00000056b9854abf830236d77443a8e3556f0244265e3eb12281a7bc43b7ff57'
+    DESERIALIZER = lib_tx.DeserializerSegWit
+    X16RV2_ACTIVATION_TIME = 1721866234   # algo switch to x16rv2 at this timestamp
+    KAWPOW_ACTIVATION_TIME = 1721866236  # kawpow algo activation time
+    KAWPOW_ACTIVATION_HEIGHT = 1
+    KAWPOW_HEADER_SIZE = 120
+    TX_COUNT = 0
+    TX_COUNT_HEIGHT = 0
+    TX_PER_BLOCK = 0
+    RPC_PORT = 8766
+    REORG_LIMIT = 100
+    PEERS = [
+    ]
+
+    @classmethod
+    def static_header_offset(cls, height):
+        print(height)
+        '''Given a header height return its offset in the headers file.'''
+        if cls.KAWPOW_ACTIVATION_HEIGHT < 0 or height <= cls.KAWPOW_ACTIVATION_HEIGHT:
+            result = height * cls.BASIC_HEADER_SIZE
+        else:  # RVN block header size increased with kawpow fork
+            baseoffset = cls.KAWPOW_ACTIVATION_HEIGHT * cls.BASIC_HEADER_SIZE
+            result = baseoffset + ((height-cls.KAWPOW_ACTIVATION_HEIGHT) * cls.KAWPOW_HEADER_SIZE)
+        return result
+
+    @classmethod
+    def header_hash(cls, header):
+        '''Given a header return the hash.'''
+        timestamp = util.unpack_le_uint32_from(header, 68)[0]
+        assert cls.KAWPOW_ACTIVATION_TIME > 0
+
+        def reverse_bytes(data):
+            b = bytearray(data)
+            b.reverse()
+            return bytes(b)
+
+        if timestamp >= cls.KAWPOW_ACTIVATION_TIME:
+            import meraki
+            nNonce64 = util.unpack_le_uint64_from(header, 80)[0]  # uint64_t
+            mix_hash = reverse_bytes(header[88:120])  # uint256
+
+            header_hash = reverse_bytes(double_sha256(header[:80]))
+
+            final_hash = reverse_bytes(meraki.light_verify(header_hash, mix_hash, nNonce64))
+            return final_hash
+
+        elif timestamp >= cls.X16RV2_ACTIVATION_TIME:
+            import x16rv2_hash
+            return x16rv2_hash.getPoWHash(header)
+        else:
+            import x16r_hash
+            return x16r_hash.getPoWHash(header)
